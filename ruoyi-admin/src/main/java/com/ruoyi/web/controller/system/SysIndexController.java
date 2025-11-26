@@ -158,8 +158,10 @@ public class SysIndexController extends BaseController
     // 检查初始密码是否提醒修改
     public boolean initPasswordIsModify(Date pwdUpdateDate)
     {
-        Integer initPasswordModify = Convert.toInt(configService.selectConfigByKey("sys.account.initPasswordModify"));
-        return initPasswordModify != null && initPasswordModify == 1 && pwdUpdateDate == null;
+        // 已禁用初始密码提示功能
+        return false;
+        // Integer initPasswordModify = Convert.toInt(configService.selectConfigByKey("sys.account.initPasswordModify"));
+        // return initPasswordModify != null && initPasswordModify == 1 && pwdUpdateDate == null;
     }
 
     // 检查密码是否过期

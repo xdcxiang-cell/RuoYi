@@ -15,7 +15,25 @@
     <!-- 避免IE使用兼容模式 -->
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <link rel="shortcut icon" href="../static/favicon.ico" th:href="@{favicon.ico}"/>
-    <style type="text/css">label.error { position:inherit;  }</style>
+    <style type="text/css">
+        label.error { position:inherit; }
+        /* 强制隐藏所有可能的遮罩层 */
+        .blockUI, .blockUI.blockOverlay, .blockUI.blockMsg, 
+        .layui-layer-shade, .layui-layer, .modal-backdrop,
+        div[style*="position: fixed"][style*="z-index"],
+        div[style*="position: absolute"][style*="background"] {
+            display: none !important;
+            visibility: hidden !important;
+            opacity: 0 !important;
+            z-index: -9999 !important;
+        }
+        /* 确保登录表单可点击 */
+        .signinpanel, .signinpanel * {
+            pointer-events: auto !important;
+            position: relative !important;
+            z-index: 9999 !important;
+        }
+    </style>
     <script>
         if(window.top!==window.self){alert('未登录或登录超时。请重新登录');window.top.location=window.location};
     </script>
@@ -77,6 +95,84 @@
 <script src="../static/ajax/libs/layer/layer.min.js" th:src="@{/ajax/libs/layer/layer.min.js}"></script>
 <script src="../static/ajax/libs/blockUI/jquery.blockUI.js" th:src="@{/ajax/libs/blockUI/jquery.blockUI.js}"></script>
 <script src="../static/ruoyi/js/ry-ui.js" th:src="@{/ruoyi/js/ry-ui.js?v=4.8.1}"></script>
+<script>
+// 立即执行清除遮罩层（在DOM加载前）
+(function() {
+    // 强制清除所有遮罩层的函数
+    function clearAllMasks() {
+        try {
+            // 清除blockUI遮罩层
+            if (typeof $ !== 'undefined' && typeof $.unblockUI !== 'undefined') {
+                $.unblockUI();
+            }
+            
+            // 清除所有layer弹窗和遮罩
+            if (typeof layer !== 'undefined') {
+                layer.closeAll();
+            }
+            
+            // 移除所有可能的遮罩DOM元素
+            var maskSelectors = [
+                '.blockUI',
+                '.blockOverlay',
+                '.blockMsg',
+                '.layui-layer-shade',
+                '.layui-layer',
+                '.modal-backdrop',
+                'div[style*="position: fixed"]',
+                'div[class*="block"]'
+            ];
+            
+            maskSelectors.forEach(function(selector) {
+                try {
+                    var elements = document.querySelectorAll(selector);
+                    elements.forEach(function(el) {
+                        if (el && el.parentNode && 
+                            (el.className.indexOf('block') !== -1 || 
+                             el.className.indexOf('layer') !== -1 || 
+                             el.className.indexOf('modal') !== -1)) {
+                            el.parentNode.removeChild(el);
+                        }
+                    });
+                } catch(e) {
+                    console.log('清除遮罩层错误:', e);
+                }
+            });
+            
+            // 强制设置body样式
+            if (document.body) {
+                document.body.style.overflow = 'auto';
+                document.body.style.position = 'static';
+            }
+            
+            console.log('已清除所有遮罩层');
+        } catch(e) {
+            console.error('清除遮罩层失败:', e);
+        }
+    }
+    
+    // 页面加载前立即执行
+    clearAllMasks();
+    
+    // DOM加载后再次执行
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', clearAllMasks);
+    } else {
+        clearAllMasks();
+    }
+    
+    // jQuery加载后执行
+    if (typeof $ !== 'undefined') {
+        $(document).ready(clearAllMasks);
+        // 页面完全加载后再次执行
+        $(window).on('load', clearAllMasks);
+    }
+    
+    // 定时清除（防止异步加载的遮罩层）
+    setTimeout(clearAllMasks, 500);
+    setTimeout(clearAllMasks, 1000);
+})();
+</script>
 <script src="../static/ruoyi/login.js" th:src="@{/ruoyi/login.js}"></script>
 </body>
 </html>
