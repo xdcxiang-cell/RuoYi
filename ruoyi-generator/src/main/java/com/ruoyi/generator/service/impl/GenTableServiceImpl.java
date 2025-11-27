@@ -116,6 +116,20 @@ public class GenTableServiceImpl implements IGenTableService
     }
 
     /**
+     * 查询业务信息
+     * 
+     * @param tableName 表名称
+     * @return 业务信息
+     */
+    @Override
+    public GenTable selectGenTableByName(String tableName)
+    {
+        GenTable genTable = genTableMapper.selectGenTableByName(tableName);
+        setTableFromOptions(genTable);
+        return genTable;
+    }
+
+    /**
      * 修改业务
      * 
      * @param genTable 业务信息

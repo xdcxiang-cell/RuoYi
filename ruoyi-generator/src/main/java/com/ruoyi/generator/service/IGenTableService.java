@@ -51,6 +51,14 @@ public interface IGenTableService
     public GenTable selectGenTableById(Long id);
 
     /**
+     * 查询业务信息
+     * 
+     * @param tableName 表名称
+     * @return 业务信息
+     */
+    public GenTable selectGenTableByName(String tableName);
+
+    /**
      * 修改业务
      * 
      * @param genTable 业务信息
