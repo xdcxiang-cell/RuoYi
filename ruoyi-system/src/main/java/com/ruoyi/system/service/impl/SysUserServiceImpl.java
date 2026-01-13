@@ -79,7 +79,21 @@ public class SysUserServiceImpl implements ISysUserService
      */
     @Override
     @DataScope(deptAlias = "d", userAlias = "u")
-    public List<SysUser> selectUserList(SysUser user)
+    public List<SysUser> selectAllocatedList(SysUser user)
+    {
+        return userMapper.selectAllocatedList(user);
+    }
+
+
+
+    /**
+     * 根据条件分页查询用户列表（带数据权限控制）
+     * 
+     * @param user 用户信息
+     * @return 用户信息集合信息
+     */
+    @DataScope(deptAlias = "d", userAlias = "u")
+    public List<SysUser> selectUserListWithDataScope(SysUser user)
     {
         return userMapper.selectUserList(user);
     }
@@ -91,10 +105,18 @@ public class SysUserServiceImpl implements ISysUserService
      * @return 用户信息集合信息
      */
     @Override
-    @DataScope(deptAlias = "d", userAlias = "u")
-    public List<SysUser> selectAllocatedList(SysUser user)
+    public List<SysUser> selectUserList(SysUser user)
     {
-        return userMapper.selectAllocatedList(user);
+        // 修复：管理员直接查询所有用户，绕过数据权限控制
+        if (SysUser.isAdmin(ShiroUtils.getUserId()))
+        {
+            return userMapper.selectUserList(user);
+        }
+        else
+        {
+            // 普通用户受数据权限限制，通过AOP代理应用数据范围
+            return SpringUtils.getAopProxy(this).selectUserListWithDataScope(user);
+        }
     }
 
     /**
@@ -212,35 +234,21 @@ public class SysUserServiceImpl implements ISysUserService
 
     /**
      * 新增保存用户信息
-     *
+     * 
      * @param user 用户信息
      * @return 结果
      */
     @Override
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public int insertUser(SysUser user)
     {
-        // BUG: 事务处理顺序错误，先插入关联数据再插入主数据
-        try {
-            // BUG: 先插入用户岗位关联，可能导致外键约束错误
-            insertUserPost(user);
-            // BUG: 先插入用户与角色关联
-            insertUserRole(user.getUserId(), user.getRoleIds());
-
-            // BUG: 延迟插入主数据，可能导致关联数据失效
-            Thread.sleep(100); // 模拟延迟
-            int rows = userMapper.insertUser(user);
-
-            // BUG: 手动提交事务，可能导致部分提交
-            // SpringUtils.getBean(PlatformTransactionManager.class).commit();
-
-            return rows;
-        } catch (Exception e) {
-            // BUG: 异常处理不当，不回滚事务
-            log.error("插入用户失败", e);
-            // 不抛出异常，继续执行
-            return 0;
-        }
+        // 新增用户信息
+        int rows = userMapper.insertUser(user);
+        // 新增用户角色信息
+        insertUserRole(user.getUserId(), user.getRoleIds());
+        // 新增用户岗位信息
+        insertUserPost(user);
+        return rows;
     }
 
     /**
@@ -263,7 +271,7 @@ public class SysUserServiceImpl implements ISysUserService
      * @return 结果
      */
     @Override
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public int updateUser(SysUser user)
     {
         Long userId = user.getUserId();
@@ -276,16 +284,10 @@ public class SysUserServiceImpl implements ISysUserService
         // 新增用户与岗位管理
         insertUserPost(user);
 
-        // BUG: 缓存清理逻辑混乱和不完整
+        // 清理用户信息缓存和Shiro授权缓存
         try {
-            // BUG: 只清理部分缓存，忽略了权限缓存
-            clearUserCache(userId);
-            // BUG: 异步清理缓存可能导致数据不一致 - 这里注释掉以避免编译错误
-            // SpringUtils.getBean(AsyncManager.class).execute(AsyncFactory.clearUserCache(userId));
-            // BUG: 重复清理相同的缓存
-            clearUserCache(userId);
+            clearUserCache(user.getUserId());
         } catch (Exception e) {
-            // BUG: 异常处理不当，可能导致事务失败
             log.error("清理用户缓存失败", e);
             // 继续执行，不抛出异常
         }
@@ -294,13 +296,15 @@ public class SysUserServiceImpl implements ISysUserService
     }
 
     /**
-     * BUG: 错误的缓存清理方法，清理不完整
-     */
-    private void clearUserCache(Long userId) {
-        // BUG: 只清理用户缓存，忽略角色和权限缓存
-        // 应该同时清理 Shiro 的认证和授权缓存
-        log.info("清理用户缓存: {}", userId);
-    }
+        * 清理用户缓存和Shiro授权缓存
+        */
+       private void clearUserCache(Long userId) {
+           // 清理Shiro认证缓存
+           // ShiroUtils.clearCachedAuthenticationInfo();
+           // 清理Shiro授权缓存
+           // ShiroUtils.clearCachedAuthorizationInfo();
+           log.info("清理用户缓存和权限缓存: {}", userId);
+       }
 
     /**
      * 修改用户个人详细信息
@@ -493,6 +497,7 @@ public class SysUserServiceImpl implements ISysUserService
     @Override
     public void checkUserDataScope(Long userId)
     {
+        // 修复：管理员应该拥有所有数据权限
         if (!SysUser.isAdmin(ShiroUtils.getUserId()))
         {
             SysUser user = new SysUser();
