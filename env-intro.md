@@ -1,0 +1,4 @@
+- system: MacOS 13.7.8 
+- Docker Desktop: 4.40.0 (187762) 
+- DB: 10.11.11-
+- jdk: 8

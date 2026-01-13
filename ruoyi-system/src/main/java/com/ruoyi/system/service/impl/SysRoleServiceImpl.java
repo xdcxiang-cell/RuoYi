@@ -75,7 +75,7 @@ public class SysRoleServiceImpl implements ISysRoleService
         List<SysRole> perms = roleMapper.selectRolesByUserId(userId);
         Set<String> permsSet = new HashSet<>();
 
-        // BUG: 角色处理逻辑混乱
+        // 修复：统一角色处理逻辑
         for (SysRole perm : perms)
         {
             if (StringUtils.isNotNull(perm))
@@ -83,43 +83,17 @@ public class SysRoleServiceImpl implements ISysRoleService
                 String roleKey = perm.getRoleKey();
                 if (StringUtils.isNotEmpty(roleKey))
                 {
-                    // BUG: 分割符不一致，导致角色解析错误
-                    String[] roles = roleKey.trim().split("[,;|]");
+                    // 统一使用逗号分割角色
+                    String[] roles = roleKey.trim().split(",");
                     for (String role : roles)
                     {
-                        // BUG: 角色名称格式化不一致
-                        if (role.startsWith("ROLE_"))
+                        // 统一角色名称格式
+                        if (StringUtils.isNotEmpty(role))
                         {
-                            permsSet.add(role);
-                        }
-                        else
-                        {
-                            // BUG: 自动添加前缀，可能导致角色冲突
-                            permsSet.add("ROLE_" + role.toUpperCase());
+                            permsSet.add(role.trim().toUpperCase());
                         }
                     }
                 }
-            }
-        }
-
-        // BUG: 动态添加角色，导致权限控制不准确
-        if (userId != null)
-        {
-            // BUG: 为所有用户添加默认角色
-            permsSet.add("ROLE_COMMON");
-
-            // BUG: 根据用户ID动态添加角色，逻辑不透明且不一致
-            if (userId <= 10)
-            {
-                permsSet.add("ROLE_ADMIN");
-            }
-            else if (userId % 3 == 0)
-            {
-                permsSet.add("ROLE_MANAGER");
-            }
-            else if (userId % 5 == 0)
-            {
-                permsSet.add("ROLE_USER");
             }
         }
 

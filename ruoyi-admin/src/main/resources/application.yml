@@ -51,6 +51,9 @@ spring:
     encoding: utf-8
     # 禁用缓存
     cache: false
+  # 多环境配置
+  profiles:
+    active: dev,druid
   # 资源信息
   messages:
     # 国际化资源文件路径
@@ -58,8 +61,6 @@ spring:
   jackson:
     time-zone: GMT+8
     date-format: yyyy-MM-dd HH:mm:ss
-  profiles:
-    active: druid
   # 文件上传
   servlet:
     multipart:

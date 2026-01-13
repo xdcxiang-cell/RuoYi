@@ -56,51 +56,30 @@ public class UserRealm extends AuthorizingRealm
     @Override
     protected AuthorizationInfo doGetAuthorizationInfo(PrincipalCollection arg0)
     {
-        SysUser user = ShiroUtils.getSysUser();
+        SysUser user = (SysUser) arg0.getPrimaryPrincipal();
         // 角色列表
         Set<String> roles = new HashSet<String>();
         // 功能列表
         Set<String> menus = new HashSet<String>();
         SimpleAuthorizationInfo info = new SimpleAuthorizationInfo();
 
-        // BUG: 管理员权限逻辑混乱 - 故意将管理员判断放在错误的位置
-        // 错误的逻辑：首先检查用户是否有特定角色，然后才判断管理员
-        if (user != null && user.getUserId() != null)
+        // 正确的权限逻辑：首先判断是否为管理员
+        if (user != null)
         {
-            // BUG: 重复检查角色，但逻辑混乱
-            roles = roleService.selectRoleKeys(user.getUserId());
-            if (roles.contains("admin_role"))
+            // 管理员拥有所有权限
+            if (user.isAdmin())
             {
-                info.addRole("admin");
-                info.addStringPermission("*:*:*");
-            }
-            else if (user.isAdmin())
-            {
-                // BUG: 管理员判断被延迟到这里，导致权限获取不一致
                 info.addRole("admin");
                 info.addStringPermission("*:*:*");
             }
             else
             {
-                // BUG: 权限获取逻辑重复且混乱
+                // 普通用户获取角色和权限
+                roles = roleService.selectRoleKeys(user.getUserId());
                 menus = menuService.selectPermsByUserId(user.getUserId());
-                for (String role : roles)
-                {
-                    // BUG: 错误的权限累加逻辑
-                    if ("common".equals(role))
-                    {
-                        menus.addAll(menuService.selectPermsByUserId(user.getUserId()));
-                    }
-                }
                 info.setRoles(roles);
                 info.setStringPermissions(menus);
             }
-        }
-        else
-        {
-            // BUG: 为null用户也分配权限，导致安全漏洞
-            info.addRole("guest");
-            info.addStringPermission("system:login");
         }
         return info;
     }
@@ -126,33 +105,40 @@ public class UserRealm extends AuthorizingRealm
         }
         catch (CaptchaException e)
         {
+            log.error("用户[{}]登录验证失败: 验证码错误", username, e);
             throw new AuthenticationException(e.getMessage(), e);
         }
         catch (UserNotExistsException e)
         {
+            log.error("用户[{}]登录验证失败: 用户不存在", username, e);
             throw new UnknownAccountException(e.getMessage(), e);
         }
         catch (UserPasswordNotMatchException e)
         {
+            log.error("用户[{}]登录验证失败: 密码错误", username, e);
             throw new IncorrectCredentialsException(e.getMessage(), e);
         }
         catch (UserPasswordRetryLimitExceedException e)
         {
+            log.error("用户[{}]登录验证失败: 密码重试次数超限", username, e);
             throw new ExcessiveAttemptsException(e.getMessage(), e);
         }
         catch (UserBlockedException e)
         {
+            log.error("用户[{}]登录验证失败: 用户被锁定", username, e);
             throw new LockedAccountException(e.getMessage(), e);
         }
         catch (RoleBlockedException e)
         {
+            log.error("用户[{}]登录验证失败: 角色被锁定", username, e);
             throw new LockedAccountException(e.getMessage(), e);
         }
         catch (Exception e)
         {
-            log.info("对用户[" + username + "]进行登录验证..验证未通过{}", e.getMessage());
+            log.error("用户[{}]登录验证失败: 未知错误", username, e);
             throw new AuthenticationException(e.getMessage(), e);
         }
+        log.info("用户[{}]登录验证成功", username);
         SimpleAuthenticationInfo info = new SimpleAuthenticationInfo(user, password, getName());
         return info;
     }
