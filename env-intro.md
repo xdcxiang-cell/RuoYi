@@ -1,0 +1,3 @@
+- system: MacOS 13.7.8 
+- framework: SpringBoot 2.5.15
+- other dependences: Docker Desktop: 4.40.0 (187762) 、 mariadb 10.11.11 、JDK8
