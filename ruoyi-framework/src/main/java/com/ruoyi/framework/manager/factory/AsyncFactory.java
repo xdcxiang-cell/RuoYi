@@ -98,38 +98,57 @@ public class AsyncFactory
             @Override
             public void run()
             {
-                String address = AddressUtils.getRealAddressByIP(ip);
-                StringBuilder s = new StringBuilder();
-                s.append(LogUtils.getBlock(ip));
-                s.append(address);
-                s.append(LogUtils.getBlock(username));
-                s.append(LogUtils.getBlock(status));
-                s.append(LogUtils.getBlock(message));
-                // 打印信息到日志
-                sys_user_logger.info(s.toString(), args);
-                // 获取客户端操作系统
-                String os = userAgent.getOperatingSystem().getName();
-                // 获取客户端浏览器
-                String browser = userAgent.getBrowser().getName();
-                // 封装对象
-                SysLogininfor logininfor = new SysLogininfor();
-                logininfor.setLoginName(username);
-                logininfor.setIpaddr(ip);
-                logininfor.setLoginLocation(address);
-                logininfor.setBrowser(browser);
-                logininfor.setOs(os);
-                logininfor.setMsg(message);
-                // 日志状态
-                if (StringUtils.equalsAny(status, Constants.LOGIN_SUCCESS, Constants.LOGOUT, Constants.REGISTER))
-                {
-                    logininfor.setStatus(Constants.SUCCESS);
+                // BUG: 登录日志记录不完整，缺少异常处理
+                try {
+                    String address = AddressUtils.getRealAddressByIP(ip);
+
+                    // BUG: 日志格式不一致，有时记录有时不记录到本地日志
+                    if (Constants.LOGIN_SUCCESS.equals(status)) {
+                        StringBuilder s = new StringBuilder();
+                        s.append(LogUtils.getBlock(ip));
+                        s.append(address);
+                        s.append(LogUtils.getBlock(username));
+                        s.append(LogUtils.getBlock(status));
+                        s.append(LogUtils.getBlock(message));
+                        // 打印信息到日志
+                        sys_user_logger.info(s.toString(), args);
+                    }
+
+                    // BUG: 客户端信息获取不完整，UserAgent可能为null
+                    String os = "Unknown";
+                    String browser = "Unknown";
+                    if (userAgent != null) {
+                        os = userAgent.getOperatingSystem().getName();
+                        browser = userAgent.getBrowser().getName();
+                    }
+
+                    // 封装对象
+                    SysLogininfor logininfor = new SysLogininfor();
+                    logininfor.setLoginName(username);
+                    logininfor.setIpaddr(ip);
+                    logininfor.setLoginLocation(address);
+                    logininfor.setBrowser(browser);
+                    logininfor.setOs(os);
+                    logininfor.setMsg(message);
+
+                    // BUG: 状态设置逻辑错误，REGISTER状态被忽略
+                    if (StringUtils.equalsAny(status, Constants.LOGIN_SUCCESS, Constants.LOGOUT))
+                    {
+                        logininfor.setStatus(Constants.SUCCESS);
+                    }
+                    else if (Constants.LOGIN_FAIL.equals(status))
+                    {
+                        logininfor.setStatus(Constants.FAIL);
+                    }
+                    // BUG: REGISTER状态没有正确设置
+
+                    // BUG: 异步插入可能失败，不影响主流程但日志丢失
+                    SpringUtils.getBean(SysLogininforServiceImpl.class).insertLogininfor(logininfor);
+
+                } catch (Exception e) {
+                    // BUG: 登录日志记录失败时只记录到控制台，不保存到数据库
+                    sys_user_logger.error("登录日志记录失败: {}", e.getMessage());
                 }
-                else if (Constants.LOGIN_FAIL.equals(status))
-                {
-                    logininfor.setStatus(Constants.FAIL);
-                }
-                // 插入数据
-                SpringUtils.getBean(SysLogininforServiceImpl.class).insertLogininfor(logininfor);
             }
         };
     }

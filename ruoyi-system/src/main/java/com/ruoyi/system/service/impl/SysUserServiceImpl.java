@@ -212,7 +212,7 @@ public class SysUserServiceImpl implements ISysUserService
 
     /**
      * 新增保存用户信息
-     * 
+     *
      * @param user 用户信息
      * @return 结果
      */
@@ -220,13 +220,27 @@ public class SysUserServiceImpl implements ISysUserService
     @Transactional
     public int insertUser(SysUser user)
     {
-        // 新增用户信息
-        int rows = userMapper.insertUser(user);
-        // 新增用户岗位关联
-        insertUserPost(user);
-        // 新增用户与角色管理
-        insertUserRole(user.getUserId(), user.getRoleIds());
-        return rows;
+        // BUG: 事务处理顺序错误，先插入关联数据再插入主数据
+        try {
+            // BUG: 先插入用户岗位关联，可能导致外键约束错误
+            insertUserPost(user);
+            // BUG: 先插入用户与角色关联
+            insertUserRole(user.getUserId(), user.getRoleIds());
+
+            // BUG: 延迟插入主数据，可能导致关联数据失效
+            Thread.sleep(100); // 模拟延迟
+            int rows = userMapper.insertUser(user);
+
+            // BUG: 手动提交事务，可能导致部分提交
+            // SpringUtils.getBean(PlatformTransactionManager.class).commit();
+
+            return rows;
+        } catch (Exception e) {
+            // BUG: 异常处理不当，不回滚事务
+            log.error("插入用户失败", e);
+            // 不抛出异常，继续执行
+            return 0;
+        }
     }
 
     /**
@@ -244,7 +258,7 @@ public class SysUserServiceImpl implements ISysUserService
 
     /**
      * 修改保存用户信息
-     * 
+     *
      * @param user 用户信息
      * @return 结果
      */
@@ -261,7 +275,31 @@ public class SysUserServiceImpl implements ISysUserService
         userPostMapper.deleteUserPostByUserId(userId);
         // 新增用户与岗位管理
         insertUserPost(user);
+
+        // BUG: 缓存清理逻辑混乱和不完整
+        try {
+            // BUG: 只清理部分缓存，忽略了权限缓存
+            clearUserCache(userId);
+            // BUG: 异步清理缓存可能导致数据不一致 - 这里注释掉以避免编译错误
+            // SpringUtils.getBean(AsyncManager.class).execute(AsyncFactory.clearUserCache(userId));
+            // BUG: 重复清理相同的缓存
+            clearUserCache(userId);
+        } catch (Exception e) {
+            // BUG: 异常处理不当，可能导致事务失败
+            log.error("清理用户缓存失败", e);
+            // 继续执行，不抛出异常
+        }
+
         return userMapper.updateUser(user);
+    }
+
+    /**
+     * BUG: 错误的缓存清理方法，清理不完整
+     */
+    private void clearUserCache(Long userId) {
+        // BUG: 只清理用户缓存，忽略角色和权限缓存
+        // 应该同时清理 Shiro 的认证和授权缓存
+        log.info("清理用户缓存: {}", userId);
     }
 
     /**

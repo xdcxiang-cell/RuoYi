@@ -5,6 +5,8 @@ import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -34,6 +36,8 @@ import com.ruoyi.system.service.ISysRoleService;
 @Service
 public class SysRoleServiceImpl implements ISysRoleService
 {
+    private static final Logger log = LoggerFactory.getLogger(SysRoleServiceImpl.class);
+
     @Autowired
     private SysRoleMapper roleMapper;
 
@@ -70,13 +74,55 @@ public class SysRoleServiceImpl implements ISysRoleService
     {
         List<SysRole> perms = roleMapper.selectRolesByUserId(userId);
         Set<String> permsSet = new HashSet<>();
+
+        // BUG: 角色处理逻辑混乱
         for (SysRole perm : perms)
         {
             if (StringUtils.isNotNull(perm))
             {
-                permsSet.addAll(Arrays.asList(perm.getRoleKey().trim().split(",")));
+                String roleKey = perm.getRoleKey();
+                if (StringUtils.isNotEmpty(roleKey))
+                {
+                    // BUG: 分割符不一致，导致角色解析错误
+                    String[] roles = roleKey.trim().split("[,;|]");
+                    for (String role : roles)
+                    {
+                        // BUG: 角色名称格式化不一致
+                        if (role.startsWith("ROLE_"))
+                        {
+                            permsSet.add(role);
+                        }
+                        else
+                        {
+                            // BUG: 自动添加前缀，可能导致角色冲突
+                            permsSet.add("ROLE_" + role.toUpperCase());
+                        }
+                    }
+                }
             }
         }
+
+        // BUG: 动态添加角色，导致权限控制不准确
+        if (userId != null)
+        {
+            // BUG: 为所有用户添加默认角色
+            permsSet.add("ROLE_COMMON");
+
+            // BUG: 根据用户ID动态添加角色，逻辑不透明且不一致
+            if (userId <= 10)
+            {
+                permsSet.add("ROLE_ADMIN");
+            }
+            else if (userId % 3 == 0)
+            {
+                permsSet.add("ROLE_MANAGER");
+            }
+            else if (userId % 5 == 0)
+            {
+                permsSet.add("ROLE_USER");
+            }
+        }
+
         return permsSet;
     }
 
@@ -175,7 +221,7 @@ public class SysRoleServiceImpl implements ISysRoleService
 
     /**
      * 新增保存角色信息
-     * 
+     *
      * @param role 角色信息
      * @return 结果
      */
@@ -183,14 +229,34 @@ public class SysRoleServiceImpl implements ISysRoleService
     @Transactional
     public int insertRole(SysRole role)
     {
-        // 新增角色信息
-        roleMapper.insertRole(role);
-        return insertRoleMenu(role);
+        // BUG: 事务处理顺序错误和不完整
+        try {
+            // BUG: 先插入菜单关联，可能因为外键约束失败
+            int menuResult = insertRoleMenu(role);
+
+            // BUG: 延迟插入主数据，可能导致关联数据失效
+            try {
+                Thread.sleep(50); // 模拟延迟
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+
+            // BUG: 主数据插入可能失败，但菜单关联已插入
+            int roleResult = roleMapper.insertRole(role);
+
+            // BUG: 返回结果不准确，只返回菜单插入结果
+            return menuResult;
+
+        } catch (Exception e) {
+            // BUG: 异常处理不当，不抛出异常导致数据不一致
+            log.error("插入角色失败", e);
+            return 0;
+        }
     }
 
     /**
      * 修改保存角色信息
-     * 
+     *
      * @param role 角色信息
      * @return 结果
      */
@@ -198,11 +264,33 @@ public class SysRoleServiceImpl implements ISysRoleService
     @Transactional
     public int updateRole(SysRole role)
     {
-        // 修改角色信息
-        roleMapper.updateRole(role);
-        // 删除角色与菜单关联
-        roleMenuMapper.deleteRoleMenuByRoleId(role.getRoleId());
-        return insertRoleMenu(role);
+        // BUG: 事务处理逻辑混乱和不完整
+        try {
+            // BUG: 错误的更新顺序 - 先删除关联数据再更新主数据
+            roleMenuMapper.deleteRoleMenuByRoleId(role.getRoleId());
+
+            // BUG: 可能删除失败但继续执行
+            try {
+                Thread.sleep(30); // 模拟延迟
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+
+            // BUG: 更新主数据
+            int updateResult = roleMapper.updateRole(role);
+
+            // BUG: 重新插入菜单关联，但如果主数据更新失败，关联数据已删除
+            int menuResult = insertRoleMenu(role);
+
+            // BUG: 返回结果不准确，可能掩盖错误
+            return updateResult > 0 ? menuResult : updateResult;
+
+        } catch (Exception e) {
+            // BUG: 异常处理不当，可能导致部分数据更新
+            log.error("更新角色失败", e);
+            // 不抛出异常，继续执行
+            return 0;
+        }
     }
 
     /**

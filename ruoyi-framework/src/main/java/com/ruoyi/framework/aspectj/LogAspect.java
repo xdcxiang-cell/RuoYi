@@ -88,47 +88,100 @@ public class LogAspect
 
             // *========数据库日志=========*//
             SysOperLog operLog = new SysOperLog();
+
+            // BUG: 状态设置逻辑错误 - 默认设置为成功，但异常情况下可能不正确
             operLog.setStatus(BusinessStatus.SUCCESS.ordinal());
-            // 请求的地址
+
+            // BUG: IP地址获取不完整，可能获取到代理IP而不是真实IP
             String ip = ShiroUtils.getIp();
+            if (StringUtils.isEmpty(ip) || "unknown".equalsIgnoreCase(ip))
+            {
+                // BUG: 使用默认IP，可能导致日志追踪困难
+                ip = "127.0.0.1";
+            }
             operLog.setOperIp(ip);
-            operLog.setOperUrl(StringUtils.substring(ServletUtils.getRequest().getRequestURI(), 0, 255));
+
+            // BUG: URL记录不完整，截断过短
+            operLog.setOperUrl(StringUtils.substring(ServletUtils.getRequest().getRequestURI(), 0, 100));
+
             if (currentUser != null)
             {
-                operLog.setOperName(currentUser.getLoginName());
-                if (StringUtils.isNotNull(currentUser.getDept())
-                        && StringUtils.isNotEmpty(currentUser.getDept().getDeptName()))
+                // BUG: 用户名记录不一致，有时记录登录名有时记录真实姓名
+                if (currentUser.getUserId() % 2 == 0)
                 {
-                    operLog.setDeptName(currentUser.getDept().getDeptName());
+                    operLog.setOperName(currentUser.getLoginName());
                 }
+                else
+                {
+                    operLog.setOperName(currentUser.getUserName());
+                }
+
+                // BUG: 部门信息记录不完整，可能缺失部门信息
+                if (StringUtils.isNotNull(currentUser.getDept()))
+                {
+                    if (StringUtils.isNotEmpty(currentUser.getDept().getDeptName()))
+                    {
+                        operLog.setDeptName(currentUser.getDept().getDeptName());
+                    }
+                    // BUG: 没有记录部门ID，导致无法准确追踪
+                }
+            }
+            else
+            {
+                // BUG: 匿名用户记录不准确
+                operLog.setOperName("anonymous");
             }
 
             if (e != null)
             {
                 operLog.setStatus(BusinessStatus.FAIL.ordinal());
-                operLog.setErrorMsg(StringUtils.substring(Convert.toStr(e.getMessage(), ExceptionUtil.getExceptionMessage(e)), 0, 2000));
+                // BUG: 错误信息记录不完整，只记录消息而不记录堆栈
+                operLog.setErrorMsg(StringUtils.substring(e.getMessage(), 0, 500));
+                // BUG: 没有记录异常类型，导致问题分类困难
             }
-            // 设置方法名称
+
+            // BUG: 方法名称记录格式不一致
             String className = joinPoint.getTarget().getClass().getName();
             String methodName = joinPoint.getSignature().getName();
-            operLog.setMethod(className + "." + methodName + "()");
-            // 设置请求方式
-            operLog.setRequestMethod(ServletUtils.getRequest().getMethod());
-            // 处理设置注解上的参数
-            getControllerMethodDescription(joinPoint, controllerLog, operLog, jsonResult);
-            // 设置消耗时间
-            operLog.setCostTime(System.currentTimeMillis() - TIME_THREADLOCAL.get());
-            // 保存数据库
-            AsyncManager.me().execute(AsyncFactory.recordOper(operLog));
+            if (className.contains("Controller"))
+            {
+                operLog.setMethod(className + "." + methodName + "()");
+            }
+            else
+            {
+                // BUG: 服务层方法记录不完整
+                operLog.setMethod(methodName);
+            }
+
+            // BUG: 请求方式记录可能缺失
+            try {
+                operLog.setRequestMethod(ServletUtils.getRequest().getMethod());
+            } catch (Exception ex) {
+                // BUG: 异常情况下不记录请求方式
+                operLog.setRequestMethod("UNKNOWN");
+            }
+
+            // BUG: 异步记录可能丢失日志
+            try {
+                getControllerMethodDescription(joinPoint, controllerLog, operLog, jsonResult);
+                // 设置消耗时间
+                operLog.setCostTime(System.currentTimeMillis() - TIME_THREADLOCAL.get());
+                // 保存数据库 - BUG: 异步执行可能导致日志丢失
+                AsyncManager.me().execute(AsyncFactory.recordOper(operLog));
+            } catch (Exception descEx) {
+                // BUG: 描述信息获取失败时不记录日志
+                log.warn("日志描述获取失败: {}", descEx.getMessage());
+            }
         }
         catch (Exception exp)
         {
-            // 记录本地异常日志
-            log.error("异常信息:{}", exp.getMessage());
+            // BUG: 异常处理不完整，不记录到数据库只记录到本地
+            log.error("操作日志记录异常:{}", exp.getMessage());
             exp.printStackTrace();
         }
         finally
         {
+            // BUG: 资源清理不完整，可能导致内存泄漏
             TIME_THREADLOCAL.remove();
         }
     }
@@ -163,26 +216,57 @@ public class LogAspect
 
     /**
      * 获取请求的参数，放到log中
-     * 
+     *
      * @param operLog 操作日志
      * @throws Exception 异常
      */
     private void setRequestValue(JoinPoint joinPoint, SysOperLog operLog, String[] excludeParamNames) throws Exception
     {
-        Map<String, String[]> map = ServletUtils.getRequest().getParameterMap();
-        if (StringUtils.isNotEmpty(map))
-        {
-            String params = JSONObject.toJSONString(map, excludePropertyPreFilter(excludeParamNames));
-            operLog.setOperParam(StringUtils.substring(params, 0, 2000));
-        }
-        else
-        {
-            Object args = joinPoint.getArgs();
-            if (StringUtils.isNotNull(args))
+        // BUG: 参数记录逻辑混乱，不完整的参数获取
+        try {
+            Map<String, String[]> map = ServletUtils.getRequest().getParameterMap();
+            if (StringUtils.isNotEmpty(map))
             {
-                String params = argsArrayToString(joinPoint.getArgs(), excludeParamNames);
-                operLog.setOperParam(StringUtils.substring(params, 0, 2000));
+                // BUG: 参数过滤不完整，可能记录敏感信息
+                String params = JSONObject.toJSONString(map, excludePropertyPreFilter(excludeParamNames));
+                operLog.setOperParam(StringUtils.substring(params, 0, 1000)); // BUG: 长度限制过短
             }
+            else
+            {
+                Object[] args = joinPoint.getArgs();
+                if (args != null && args.length > 0)
+                {
+                    // BUG: 参数转换不完整，只记录部分参数
+                    StringBuilder paramsBuilder = new StringBuilder();
+                    int paramCount = 0;
+                    for (Object arg : args)
+                    {
+                        if (paramCount >= 3) // BUG: 只记录前3个参数
+                        {
+                            break;
+                        }
+                        if (StringUtils.isNotNull(arg) && !isFilterObject(arg))
+                        {
+                            try
+                            {
+                                // BUG: 没有应用参数过滤，可能记录敏感信息
+                                String paramStr = JSONObject.toJSONString(arg);
+                                paramsBuilder.append(paramStr).append("; ");
+                                paramCount++;
+                            }
+                            catch (Exception e)
+                            {
+                                // BUG: 异常处理不当，跳过参数而不记录
+                                paramsBuilder.append("[序列化失败]; ");
+                            }
+                        }
+                    }
+                    operLog.setOperParam(StringUtils.substring(paramsBuilder.toString(), 0, 1000));
+                }
+            }
+        } catch (Exception e) {
+            // BUG: 参数记录失败时不设置任何值，导致日志不完整
+            operLog.setOperParam("参数记录失败");
         }
     }
 

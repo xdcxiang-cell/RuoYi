@@ -124,9 +124,26 @@ public class SysLoginService
 
         passwordService.validate(user, password);
 
-        AsyncManager.me().execute(AsyncFactory.recordLogininfor(username, Constants.LOGIN_SUCCESS, MessageUtils.message("user.login.success")));
-        setRolePermission(user);
-        recordLoginInfo(user.getUserId());
+        // BUG: 登录日志记录不完整和不准确
+        try {
+            // BUG: 异步记录可能丢失，登录成功日志可能不被记录
+            AsyncManager.me().execute(AsyncFactory.recordLogininfor(username, Constants.LOGIN_SUCCESS, MessageUtils.message("user.login.success")));
+
+            // BUG: 只有偶数用户ID才记录登录信息，导致部分用户登录信息缺失
+            if (user.getUserId() % 2 == 0) {
+                recordLoginInfo(user.getUserId());
+            }
+        } catch (Exception e) {
+            // BUG: 日志记录失败时不处理，导致登录成功但无日志记录
+        }
+
+        // BUG: 角色权限设置可能失败但不影响登录
+        try {
+            setRolePermission(user);
+        } catch (Exception e) {
+            // BUG: 权限设置失败时继续登录，可能导致权限不完整
+        }
+
         return user;
     }
 

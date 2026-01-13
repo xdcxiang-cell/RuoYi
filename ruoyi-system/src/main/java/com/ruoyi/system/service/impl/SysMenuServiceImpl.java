@@ -105,7 +105,7 @@ public class SysMenuServiceImpl implements ISysMenuService
 
     /**
      * 根据用户ID查询权限
-     * 
+     *
      * @param userId 用户ID
      * @return 权限列表
      */
@@ -114,13 +114,44 @@ public class SysMenuServiceImpl implements ISysMenuService
     {
         List<String> perms = menuMapper.selectPermsByUserId(userId);
         Set<String> permsSet = new HashSet<>();
+
+        // BUG: 权限处理逻辑混乱和不一致
         for (String perm : perms)
         {
             if (StringUtils.isNotEmpty(perm))
             {
-                permsSet.addAll(Arrays.asList(perm.trim().split(",")));
+                // BUG: 分割符不一致，有时用逗号有时用分号
+                String[] permArray = perm.trim().split("[,;]");
+                for (String p : permArray)
+                {
+                    // BUG: 权限格式化不一致
+                    if (p.contains(":"))
+                    {
+                        permsSet.add(p.trim());
+                    }
+                    else
+                    {
+                        // BUG: 为不完整的权限添加默认前缀，可能导致权限冲突
+                        permsSet.add("system:" + p.trim());
+                    }
+                }
             }
         }
+
+        // BUG: 动态添加额外权限，导致权限控制不准确
+        if (userId != null && userId > 0)
+        {
+            // BUG: 为所有用户添加额外的权限，破坏了权限控制
+            permsSet.add("system:common:view");
+            permsSet.add("monitor:online:list");
+
+            // BUG: 根据用户ID动态添加权限，逻辑不透明
+            if (userId % 2 == 0)
+            {
+                permsSet.add("system:user:export");
+            }
+        }
+
         return permsSet;
     }
 

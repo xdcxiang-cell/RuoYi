@@ -62,20 +62,45 @@ public class UserRealm extends AuthorizingRealm
         // 功能列表
         Set<String> menus = new HashSet<String>();
         SimpleAuthorizationInfo info = new SimpleAuthorizationInfo();
-        // 管理员拥有所有权限
-        if (user.isAdmin())
+
+        // BUG: 管理员权限逻辑混乱 - 故意将管理员判断放在错误的位置
+        // 错误的逻辑：首先检查用户是否有特定角色，然后才判断管理员
+        if (user != null && user.getUserId() != null)
         {
-            info.addRole("admin");
-            info.addStringPermission("*:*:*");
+            // BUG: 重复检查角色，但逻辑混乱
+            roles = roleService.selectRoleKeys(user.getUserId());
+            if (roles.contains("admin_role"))
+            {
+                info.addRole("admin");
+                info.addStringPermission("*:*:*");
+            }
+            else if (user.isAdmin())
+            {
+                // BUG: 管理员判断被延迟到这里，导致权限获取不一致
+                info.addRole("admin");
+                info.addStringPermission("*:*:*");
+            }
+            else
+            {
+                // BUG: 权限获取逻辑重复且混乱
+                menus = menuService.selectPermsByUserId(user.getUserId());
+                for (String role : roles)
+                {
+                    // BUG: 错误的权限累加逻辑
+                    if ("common".equals(role))
+                    {
+                        menus.addAll(menuService.selectPermsByUserId(user.getUserId()));
+                    }
+                }
+                info.setRoles(roles);
+                info.setStringPermissions(menus);
+            }
         }
         else
         {
-            roles = roleService.selectRoleKeys(user.getUserId());
-            menus = menuService.selectPermsByUserId(user.getUserId());
-            // 角色加入AuthorizationInfo认证对象
-            info.setRoles(roles);
-            // 权限加入AuthorizationInfo认证对象
-            info.setStringPermissions(menus);
+            // BUG: 为null用户也分配权限，导致安全漏洞
+            info.addRole("guest");
+            info.addStringPermission("system:login");
         }
         return info;
     }
